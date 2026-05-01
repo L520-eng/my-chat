@@ -1366,22 +1366,11 @@ async function fetchModels() {
       });
       text = await resp.text();
     } catch (fetchErr) {
-      // If fetch fails (likely CORS), try via a proxy approach
-      // Use XHR which has slightly different CORS behavior
-      text = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', `${baseUrl}/models`, true);
-        xhr.setRequestHeader('Authorization', `Bearer ${api.key}`);
-        xhr.timeout = 10000;
-        xhr.onload = () => resolve(xhr.responseText);
-        xhr.onerror = () => reject(new Error('网络请求失败，可能是 CORS 限制。请检查 API 地址是否正确'));
-        xhr.ontimeout = () => reject(new Error('请求超时'));
-        xhr.send();
-      });
+      throw new Error('not_supported');
     }
 
     if (text && text.startsWith('<')) {
-      throw new Error('返回了网页而非 API 数据，请检查 API 地址');
+      throw new Error('not_supported');
     }
 
     let data;
@@ -1419,12 +1408,8 @@ async function fetchModels() {
     renderModelList();
     showToast(`获取到 ${models.length} 个模型`);
   } catch (e) {
-    if (e.message === 'not_supported') {
-      // Show common models list for manual selection
-      showCommonModelsPicker();
-    } else {
-      showToast('获取失败: ' + e.message);
-    }
+    // Any failure → show common models picker
+    showCommonModelsPicker();
   } finally {
     btn.textContent = '自动获取模型';
     btn.disabled = false;
