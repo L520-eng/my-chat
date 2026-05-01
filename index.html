@@ -239,6 +239,7 @@ body {
 .msg-actions {
   display: flex; gap: 8px; margin-top: 6px;
 }
+.msg.user .msg-actions { justify-content: flex-end; }
 .msg-action-btn {
   font-size: 12px; color: var(--text2);
   background: none; border: none;
@@ -305,6 +306,11 @@ body {
   padding: 10px 14px; color: var(--text);
   resize: none; min-height: 40px; max-height: 120px;
   font-family: inherit; line-height: 1.4;
+  writing-mode: horizontal-tb;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-writing-mode: horizontal-tb;
+  text-orientation: mixed;
 }
 #msgInput::placeholder { color: var(--text2); }
 
@@ -1534,10 +1540,18 @@ function renderMsg(m, index, total) {
     content += m.images.map(src => `<img class="msg-img" src="${src}">`).join('');
   }
   if (m.content) content += formatText(m.content);
-  const actions = !isUser && index === total - 1 ? `
-    <div class="msg-actions">
+  let actions = '';
+  if (isUser) {
+    actions = `<div class="msg-actions">
       <button class="msg-action-btn" data-copy="${index}">复制</button>
-    </div>` : '';
+      <button class="msg-action-btn" data-edit="${index}">✏️ 编辑</button>
+      <button class="msg-action-btn" data-delete="${index}">删除</button>
+    </div>`;
+  } else if (index === total - 1) {
+    actions = `<div class="msg-actions">
+      <button class="msg-action-btn" data-copy="${index}">复制</button>
+    </div>`;
+  }
   const html = `<div class="msg ${m.role}">
     <div class="msg-avatar">${isUser ? '我' : '✦'}</div>
     <div><div class="msg-bubble">${content}</div>${actions}</div>
@@ -1551,6 +1565,31 @@ document.addEventListener('click', e => {
     const conv = getCurrentConv();
     if (conv) {
       navigator.clipboard.writeText(conv.messages[e.target.dataset.copy]?.content || '').then(() => showToast('已复制'));
+    }
+  }
+  if (e.target.dataset.delete !== undefined) {
+    const conv = getCurrentConv();
+    if (conv && confirm('确定删除这条消息？')) {
+      const idx = parseInt(e.target.dataset.delete);
+      conv.messages.splice(idx, 1);
+      saveData();
+      renderMessages();
+      renderSidebar();
+      showToast('已删除');
+    }
+  }
+  if (e.target.dataset.edit !== undefined) {
+    const conv = getCurrentConv();
+    if (conv) {
+      const idx = parseInt(e.target.dataset.edit);
+      const msg = conv.messages[idx];
+      const newContent = prompt('编辑消息：', msg.content);
+      if (newContent !== null && newContent !== msg.content) {
+        msg.content = newContent;
+        saveData();
+        renderMessages();
+        showToast('已修改');
+      }
     }
   }
 });
