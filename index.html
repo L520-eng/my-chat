@@ -208,7 +208,8 @@ body {
   border-radius: 18px;
   font-size: 15px; line-height: 1.5;
   word-break: break-word;
-  max-width: 80%; position: relative;
+  max-width: 75%; position: relative;
+  min-width: 40px;
 }
 .msg.user .msg-bubble {
   background: var(--user-bg); color: white;
@@ -274,13 +275,12 @@ body {
 .input-icon-btn:active { color: var(--primary); }
 .input-icon-btn.send-mode { color: var(--primary); }
 .input-wrapper {
-  flex: 1;
+  flex: 1; min-width: 0;
   background: var(--input-bg);
   border: 0.5px solid var(--border);
   border-radius: 20px;
   display: flex; flex-direction: column;
   overflow: hidden;
-  max-height: 120px;
 }
 .input-images {
   display: flex; gap: 6px;
@@ -1713,6 +1713,7 @@ async function handleSend() {
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let gotAnyContent = false;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -1721,22 +1722,41 @@ async function handleSend() {
       buffer = lines.pop();
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        const data = trimmed.slice(6);
-        if (data === '[DONE]') continue;
-        try {
-          const delta = JSON.parse(data).choices?.[0]?.delta?.content;
-          if (delta) {
-            conv.messages[conv.messages.length - 1].content += delta;
-            const area = document.getElementById('chatArea');
-            const msgEl = area.querySelector('.msg.assistant:last-child');
-            if (msgEl) {
-              msgEl.querySelector('.msg-bubble').innerHTML = formatText(conv.messages[conv.messages.length - 1].content);
+        if (!trimmed) continue;
+        if (trimmed.startsWith('data: ')) {
+          const data = trimmed.slice(6);
+          if (data === '[DONE]') continue;
+          try {
+            const delta = JSON.parse(data).choices?.[0]?.delta?.content;
+            if (delta) {
+              gotAnyContent = true;
+              conv.messages[conv.messages.length - 1].content += delta;
+              const area = document.getElementById('chatArea');
+              const msgEl = area.querySelector('.msg.assistant:last-child');
+              if (msgEl) {
+                msgEl.querySelector('.msg-bubble').innerHTML = formatText(conv.messages[conv.messages.length - 1].content);
+              }
+              scrollToBottom();
             }
-            scrollToBottom();
-          }
-        } catch {}
+          } catch {}
+        }
       }
+    }
+
+    // If no streaming content, try reading full response
+    if (!gotAnyContent && buffer) {
+      try {
+        const json = JSON.parse(buffer);
+        const content = json.choices?.[0]?.message?.content;
+        if (content) {
+          conv.messages[conv.messages.length - 1].content = content;
+          gotAnyContent = true;
+        }
+      } catch {}
+    }
+
+    if (!gotAnyContent) {
+      conv.messages[conv.messages.length - 1].content = '（API 未返回内容，请检查模型名称和 API 地址）';
     }
     saveData();
   } catch (e) {
