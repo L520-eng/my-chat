@@ -458,6 +458,56 @@ body {
   display: flex; gap: 8px; margin-top: 8px;
 }
 .api-edit-actions .setting-btn { flex: 1; }
+
+/* Model Check List */
+.model-check-list {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 300px; overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.model-check-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: border-color 0.15s;
+}
+.model-check-item.checked { border-color: var(--primary); background: rgba(99,102,241,0.06); }
+.model-check-box {
+  width: 20px; height: 20px;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  font-size: 12px; color: white;
+}
+.model-check-item.checked .model-check-box {
+  background: var(--primary); border-color: var(--primary);
+}
+.model-check-name {
+  font-size: 14px; flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.model-check-delete {
+  width: 24px; height: 24px;
+  border: none; background: none;
+  color: var(--text2); font-size: 14px;
+  cursor: pointer; display: flex;
+  align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.15s;
+  touch-action: manipulation;
+}
+.model-check-item:active .model-check-delete { opacity: 1; }
+.model-list-empty {
+  text-align: center; color: var(--text2);
+  padding: 20px; font-size: 14px;
+}
+.model-list-actions { display: flex; gap: 8px; }
+.model-list-actions .setting-btn { flex: 1; }
 .btn-danger { background: #ef4444; color: white; }
 .btn-secondary { background: var(--bg); color: var(--text); border: 0.5px solid var(--border); }
 
@@ -681,8 +731,12 @@ body {
       <button class="setting-btn btn-secondary" id="addApiBtn" style="margin-top:8px">+ 添加通道</button>
     </div>
     <div class="setting-group">
-      <div class="setting-label">模型列表（每行一个）</div>
-      <textarea class="setting-textarea" id="modelList" placeholder="claude-opus-4-6&#10;gpt-4o&#10;gemini-2.5-pro"></textarea>
+      <div class="setting-label">模型列表</div>
+      <div id="modelListContainer" class="model-check-list"></div>
+      <div class="model-list-actions">
+        <button class="setting-btn btn-secondary" id="fetchModelsBtn" style="margin-top:8px">自动获取模型</button>
+        <button class="setting-btn btn-secondary" id="addModelBtn" style="margin-top:8px">+ 手动添加</button>
+      </div>
     </div>
     <div class="setting-group">
       <div class="setting-label">系统提示词（可选）</div>
@@ -742,6 +796,7 @@ let abortController = null;
 let apiConfigs = []; // [{name, url, key}]
 let activeApiIndex = 0;
 let editingApiIndex = -1; // -1 = new
+let enabledModels = []; // array of model IDs
 
 // ==================== Init ====================
 document.addEventListener('DOMContentLoaded', () => {
@@ -767,8 +822,9 @@ function bindEvents() {
   document.getElementById('settingsOverlay').addEventListener('click', closeSettings);
   document.getElementById('settingsCloseBtn').addEventListener('click', closeSettings);
   document.getElementById('clearAllBtn').addEventListener('click', clearAll);
-  document.getElementById('modelList').addEventListener('input', saveSettings);
   document.getElementById('systemPrompt').addEventListener('input', saveSettings);
+  document.getElementById('fetchModelsBtn').addEventListener('click', fetchModels);
+  document.getElementById('addModelBtn').addEventListener('click', addModelManual);
 
   // API edit
   document.getElementById('addApiBtn').addEventListener('click', () => openApiEdit(-1));
@@ -902,9 +958,15 @@ function loadData() {
     } catch {}
   }
   const s = JSON.parse(localStorage.getItem('chat_settings') || '{}');
-  document.getElementById('modelList').value = s.modelList || '';
   document.getElementById('systemPrompt').value = s.systemPrompt || '';
   currentModel = s.currentModel || '';
+
+  // Migrate model list from string to array
+  if (typeof s.modelList === 'string' && s.modelList) {
+    enabledModels = s.modelList.split('\n').map(m => m.trim()).filter(Boolean);
+  } else {
+    enabledModels = s.enabledModels || [];
+  }
 
   // Migrate old single API to multi-API
   if (s.apiUrl && !s.apiConfigs) {
@@ -939,7 +1001,7 @@ function saveSettings() {
   localStorage.setItem('chat_settings', JSON.stringify({
     apiConfigs,
     activeApiIndex,
-    modelList: document.getElementById('modelList').value.trim(),
+    enabledModels,
     systemPrompt: document.getElementById('systemPrompt').value.trim(),
     currentModel
   }));
@@ -1056,6 +1118,7 @@ function formatTime(ts) {
 // ==================== Settings ====================
 function openSettings() {
   renderApiList();
+  renderModelList();
   document.getElementById('settingsOverlay').classList.add('open');
   document.getElementById('settingsPanel').classList.add('open');
 }
@@ -1221,9 +1284,130 @@ async function checkBalance(index) {
   }
 }
 
+// ==================== Model List ====================
+function renderModelList() {
+  const container = document.getElementById('modelListContainer');
+  if (enabledModels.length === 0) {
+    container.innerHTML = '<div class="model-list-empty">点击「自动获取」或「手动添加」添加模型</div>';
+    return;
+  }
+  container.innerHTML = enabledModels.map((m, i) => `
+    <div class="model-check-item checked" data-model-idx="${i}">
+      <div class="model-check-box">✓</div>
+      <span class="model-check-name">${escapeHtml(m)}</span>
+      <button class="model-check-delete" data-del-model="${i}">✕</button>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('.model-check-item').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.closest('[data-del-model]')) return;
+      el.classList.toggle('checked');
+      // Update enabledModels based on checked state
+      const checkedEls = container.querySelectorAll('.model-check-item.checked');
+      enabledModels = Array.from(checkedEls).map(c => {
+        const idx = parseInt(c.dataset.modelIdx);
+        return enabledModels[idx];
+      }).filter(Boolean);
+      // If unchecked items remain, we need full rebuild
+      rebuildEnabledModels();
+    });
+  });
+  container.querySelectorAll('[data-del-model]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      enabledModels.splice(parseInt(el.dataset.delModel), 1);
+      if (currentModel && !enabledModels.includes(currentModel)) {
+        currentModel = enabledModels[0] || '';
+        updateModelName();
+      }
+      saveSettings();
+      renderModelList();
+    });
+  });
+}
+
+function rebuildEnabledModels() {
+  const container = document.getElementById('modelListContainer');
+  const checkedEls = container.querySelectorAll('.model-check-item.checked');
+  const checkedNames = new Set();
+  checkedEls.forEach(el => {
+    const name = el.querySelector('.model-check-name')?.textContent;
+    if (name) checkedNames.add(name);
+  });
+  enabledModels = enabledModels.filter(m => checkedNames.has(m));
+  if (currentModel && !enabledModels.includes(currentModel)) {
+    currentModel = enabledModels[0] || '';
+    updateModelName();
+  }
+  saveSettings();
+}
+
+async function fetchModels() {
+  const api = getActiveApi();
+  if (!api.url || !api.key) {
+    showToast('请先配置当前通道的 API 地址和 Key');
+    return;
+  }
+  const btn = document.getElementById('fetchModelsBtn');
+  btn.textContent = '获取中...';
+  btn.disabled = true;
+
+  try {
+    const baseUrl = api.url.replace(/\/+$/, '');
+    const resp = await fetch(`${baseUrl}/models`, {
+      headers: { 'Authorization': `Bearer ${api.key}` },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const models = (data.data || []).map(m => m.id).filter(Boolean);
+    if (models.length === 0) throw new Error('未获取到模型');
+
+    // Sort: put common models first
+    const priority = ['claude', 'gpt-4', 'gpt-3', 'gemini', 'deepseek'];
+    models.sort((a, b) => {
+      const ai = priority.findIndex(p => a.toLowerCase().includes(p));
+      const bi = priority.findIndex(p => b.toLowerCase().includes(p));
+      if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      return a.localeCompare(b);
+    });
+
+    enabledModels = models;
+    // Auto-select first model if none selected
+    if (!currentModel && models.length > 0) {
+      currentModel = models[0];
+      updateModelName();
+    }
+    saveSettings();
+    renderModelList();
+    showToast(`获取到 ${models.length} 个模型`);
+  } catch (e) {
+    showToast('获取失败: ' + e.message);
+  } finally {
+    btn.textContent = '自动获取模型';
+    btn.disabled = false;
+  }
+}
+
+function addModelManual() {
+  const name = prompt('输入模型名称（如 claude-opus-4-6）:');
+  if (!name || !name.trim()) return;
+  const m = name.trim();
+  if (!enabledModels.includes(m)) {
+    enabledModels.push(m);
+    if (!currentModel) {
+      currentModel = m;
+      updateModelName();
+    }
+    saveSettings();
+    renderModelList();
+  }
+}
+
 // ==================== Model Picker ====================
 function getModels() {
-  return document.getElementById('modelList').value.trim().split('\n').map(m => m.trim()).filter(Boolean);
+  return enabledModels;
 }
 function updateModelName() {
   document.getElementById('modelName').textContent = currentModel || '选择模型';
