@@ -249,13 +249,30 @@ body {
 .input-area {
   background: var(--card);
   border-top: 0.5px solid var(--border);
-  padding: 8px 12px;
+  padding: 8px 8px;
   padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   flex-shrink: 0;
+  position: relative;
 }
-.input-row {
-  display: flex; align-items: flex-end; gap: 8px;
+.input-images {
+  display: flex; gap: 6px;
+  padding: 6px 8px; flex-wrap: wrap;
 }
+.input-bar {
+  display: flex; align-items: flex-end; gap: 4px;
+}
+.input-icon-btn {
+  width: 40px; height: 40px; flex-shrink: 0;
+  border-radius: 50%; border: none;
+  background: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text2);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: color 0.15s;
+}
+.input-icon-btn:active { color: var(--primary); }
+.input-icon-btn.send-mode { color: var(--primary); }
 .input-wrapper {
   flex: 1;
   background: var(--input-bg);
@@ -263,6 +280,7 @@ body {
   border-radius: 20px;
   display: flex; flex-direction: column;
   overflow: hidden;
+  max-height: 120px;
 }
 .input-images {
   display: flex; gap: 6px;
@@ -289,26 +307,6 @@ body {
   font-family: inherit; line-height: 1.4;
 }
 #msgInput::placeholder { color: var(--text2); }
-.tool-btn {
-  width: 36px; height: 36px;
-  border-radius: 50%; border: none;
-  background: none; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px; color: var(--text2); flex-shrink: 0;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.send-btn {
-  width: 36px; height: 36px;
-  border-radius: 50%; border: none;
-  background: var(--primary); color: white;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 18px; flex-shrink: 0;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.send-btn.stop { background: #ef4444; }
 
 /* Settings Panel */
 .settings-overlay {
@@ -425,6 +423,84 @@ body {
 .model-item-name { font-size: 15px; }
 .model-item-check { color: var(--primary); font-size: 18px; }
 
+/* Plus Menu */
+.plus-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 8px;
+  background: var(--card);
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  padding: 8px;
+  display: none;
+  gap: 4px;
+  flex-direction: row;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+  z-index: 50;
+  animation: fadeInUp 0.15s ease;
+}
+.plus-menu.open { display: flex; }
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.plus-menu-item {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 4px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  min-width: 64px;
+}
+.plus-menu-item:active { background: rgba(99,102,241,0.08); }
+.plus-menu-icon {
+  width: 48px; height: 48px;
+  border-radius: 14px;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--primary);
+}
+.plus-menu-item span {
+  font-size: 12px; color: var(--text2);
+}
+
+/* Voice Overlay */
+.voice-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--card);
+  display: none;
+  align-items: center; justify-content: center;
+  z-index: 60;
+  border-top: 0.5px solid var(--border);
+}
+.voice-overlay.active { display: flex; }
+.voice-indicator {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 12px;
+}
+.voice-waves {
+  display: flex; align-items: center;
+  gap: 4px; height: 40px;
+}
+.voice-waves span {
+  width: 4px; border-radius: 2px;
+  background: var(--primary);
+  animation: voiceWave 0.8s ease-in-out infinite;
+}
+.voice-waves span:nth-child(1) { height: 12px; animation-delay: 0s; }
+.voice-waves span:nth-child(2) { height: 24px; animation-delay: 0.1s; }
+.voice-waves span:nth-child(3) { height: 36px; animation-delay: 0.2s; }
+.voice-waves span:nth-child(4) { height: 24px; animation-delay: 0.3s; }
+.voice-waves span:nth-child(5) { height: 12px; animation-delay: 0.4s; }
+@keyframes voiceWave {
+  0%, 100% { transform: scaleY(0.5); }
+  50% { transform: scaleY(1); }
+}
+.voice-text { font-size: 14px; color: var(--text2); }
+
 /* Toast */
 .toast {
   position: fixed; bottom: 100px;
@@ -465,19 +541,47 @@ body {
 
 <!-- Input Area -->
 <div class="input-area">
-  <div class="input-wrapper">
-    <div class="input-images" id="imagePreview" style="display:none"></div>
-    <div class="input-row">
+  <div class="input-images" id="imagePreview" style="display:none"></div>
+  <div class="input-bar">
+    <button class="input-icon-btn" id="cameraBtn" title="拍照">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+    </button>
+    <div class="input-wrapper">
       <textarea id="msgInput" rows="1" placeholder="输入消息..."></textarea>
     </div>
+    <button class="input-icon-btn" id="voiceBtn" title="长按说话">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+    </button>
+    <button class="input-icon-btn" id="plusBtn" title="更多">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
   </div>
-  <div class="input-row" style="justify-content:center;margin-top:6px">
-    <button class="tool-btn" id="imgBtn">🖼</button>
-    <button class="tool-btn" id="fileBtn">📎</button>
-    <input type="file" id="imgPicker" accept="image/*" multiple style="display:none">
-    <input type="file" id="filePicker" accept=".txt,.md,.json,.csv" style="display:none">
-    <button class="send-btn" id="sendBtn">↑</button>
+  <!-- Plus Menu -->
+  <div class="plus-menu" id="plusMenu">
+    <div class="plus-menu-item" id="plusAlbum">
+      <div class="plus-menu-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+      </div>
+      <span>相册</span>
+    </div>
+    <div class="plus-menu-item" id="plusFile">
+      <div class="plus-menu-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      </div>
+      <span>文件</span>
+    </div>
   </div>
+  <!-- Voice Recording Overlay -->
+  <div class="voice-overlay" id="voiceOverlay">
+    <div class="voice-indicator">
+      <div class="voice-waves"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="voice-text">正在录音...</div>
+    </div>
+  </div>
+  <!-- Hidden inputs -->
+  <input type="file" id="cameraPicker" accept="image/*" capture="environment" style="display:none">
+  <input type="file" id="imgPicker" accept="image/*" multiple style="display:none">
+  <input type="file" id="filePicker" accept=".txt,.md,.json,.csv" style="display:none">
 </div>
 
 <!-- Settings -->
@@ -572,6 +676,8 @@ function bindEvents() {
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    // Toggle plus/send
+    updatePlusBtn();
   });
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
@@ -595,11 +701,71 @@ function bindEvents() {
   });
 
   // Send / Stop
-  document.getElementById('sendBtn').addEventListener('click', handleSend);
+  document.getElementById('sendBtn')?.addEventListener('click', handleSend);
 
-  // Image / File
-  document.getElementById('imgBtn').addEventListener('click', () => document.getElementById('imgPicker').click());
-  document.getElementById('fileBtn').addEventListener('click', () => document.getElementById('filePicker').click());
+  // Camera
+  document.getElementById('cameraBtn').addEventListener('click', () => {
+    document.getElementById('cameraPicker').click();
+  });
+  document.getElementById('cameraPicker').addEventListener('change', function() {
+    handleImages(this);
+  });
+
+  // Voice (long press)
+  let voiceTimer = null;
+  let voiceStarted = false;
+  const voiceBtn = document.getElementById('voiceBtn');
+  const voiceOverlay = document.getElementById('voiceOverlay');
+
+  function startVoice(e) {
+    e.preventDefault();
+    voiceStarted = false;
+    voiceTimer = setTimeout(() => {
+      voiceStarted = true;
+      voiceOverlay.classList.add('active');
+      startRecording();
+    }, 300);
+  }
+  function endVoice(e) {
+    e && e.preventDefault();
+    clearTimeout(voiceTimer);
+    if (voiceStarted) {
+      voiceOverlay.classList.remove('active');
+      stopRecording();
+      voiceStarted = false;
+    }
+  }
+  voiceBtn.addEventListener('mousedown', startVoice);
+  voiceBtn.addEventListener('mouseup', endVoice);
+  voiceBtn.addEventListener('mouseleave', endVoice);
+  voiceBtn.addEventListener('touchstart', startVoice, { passive: false });
+  voiceBtn.addEventListener('touchend', endVoice, { passive: false });
+  voiceBtn.addEventListener('touchcancel', endVoice, { passive: false });
+
+  // Plus menu / Send
+  const plusBtn = document.getElementById('plusBtn');
+  const plusMenu = document.getElementById('plusMenu');
+  plusBtn.addEventListener('click', () => {
+    const hasContent = document.getElementById('msgInput').value.trim().length > 0 || attachedImages.length > 0;
+    if (isStreaming || hasContent) {
+      handleSend();
+    } else {
+      plusMenu.classList.toggle('open');
+    }
+  });
+  document.addEventListener('click', e => {
+    if (!plusMenu.contains(e.target) && e.target !== plusBtn && !plusBtn.contains(e.target)) {
+      plusMenu.classList.remove('open');
+    }
+  });
+  document.getElementById('plusAlbum').addEventListener('click', () => {
+    plusMenu.classList.remove('open');
+    document.getElementById('imgPicker').click();
+  });
+  document.getElementById('plusFile').addEventListener('click', () => {
+    plusMenu.classList.remove('open');
+    document.getElementById('filePicker').click();
+  });
   document.getElementById('imgPicker').addEventListener('change', function() { handleImages(this); });
   document.getElementById('filePicker').addEventListener('change', function() { handleFile(this); });
 }
@@ -869,12 +1035,15 @@ function handleImages(input) {
 }
 function renderImagePreviews() {
   const el = document.getElementById('imagePreview');
-  if (attachedImages.length === 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
-  el.style.display = 'flex';
-  el.innerHTML = attachedImages.map((src, i) => `<div class="input-img-wrap">
-    <img class="input-img-thumb" src="${src}">
-    <button class="input-img-remove" data-rmimg="${i}">✕</button>
-  </div>`).join('');
+  if (attachedImages.length === 0) { el.style.display = 'none'; el.innerHTML = ''; }
+  else {
+    el.style.display = 'flex';
+    el.innerHTML = attachedImages.map((src, i) => `<div class="input-img-wrap">
+      <img class="input-img-thumb" src="${src}">
+      <button class="input-img-remove" data-rmimg="${i}">✕</button>
+    </div>`).join('');
+  }
+  updatePlusBtn();
 }
 document.addEventListener('click', e => {
   if (e.target.dataset.rmimg !== undefined) {
@@ -1009,9 +1178,7 @@ async function handleSend() {
 function stopStream() { if (abortController) abortController.abort(); }
 
 function updateSendBtn() {
-  const btn = document.getElementById('sendBtn');
-  if (isStreaming) { btn.innerHTML = '■'; btn.classList.add('stop'); }
-  else { btn.innerHTML = '↑'; btn.classList.remove('stop'); }
+  updatePlusBtn();
 }
 
 // ==================== Test / Clear ====================
@@ -1043,6 +1210,68 @@ function showToast(msg) {
   el.textContent = msg;
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+// ==================== Plus/Send Toggle ====================
+const PLUS_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+const SEND_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>';
+
+function updatePlusBtn() {
+  const hasContent = document.getElementById('msgInput').value.trim().length > 0 || attachedImages.length > 0;
+  const btn = document.getElementById('plusBtn');
+  if (isStreaming) {
+    btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+    btn.classList.add('send-mode');
+  } else if (hasContent) {
+    btn.innerHTML = SEND_SVG;
+    btn.classList.add('send-mode');
+  } else {
+    btn.innerHTML = PLUS_SVG;
+    btn.classList.remove('send-mode');
+  }
+}
+
+// ==================== Voice Recording ====================
+let recognition = null;
+function startRecording() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    showToast('你的浏览器不支持语音输入');
+    document.getElementById('voiceOverlay').classList.remove('active');
+    return;
+  }
+  recognition = new SpeechRecognition();
+  recognition.lang = 'zh-CN';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  let finalText = '';
+  recognition.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        finalText += e.results[i][0].transcript;
+      } else {
+        interim += e.results[i][0].transcript;
+      }
+    }
+    const input = document.getElementById('msgInput');
+    input.value = finalText + interim;
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  };
+  recognition.onerror = () => {
+    document.getElementById('voiceOverlay').classList.remove('active');
+  };
+  recognition.onend = () => {
+    document.getElementById('voiceOverlay').classList.remove('active');
+  };
+  recognition.start();
+}
+function stopRecording() {
+  if (recognition) {
+    try { recognition.stop(); } catch {}
+    recognition = null;
+  }
 }
 </script>
 </body>
