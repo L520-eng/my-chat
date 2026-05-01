@@ -1677,7 +1677,7 @@ async function handleSend() {
     try {
       resp = await fetch(fetchUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.key}` },
+        headers: { 'Content-Type': 'text/plain', 'Authorization': `Bearer ${api.key}` },
         body: fetchBody,
         signal: abortController.signal
       });
@@ -1761,12 +1761,19 @@ async function handleSend() {
         if (content) {
           conv.messages[conv.messages.length - 1].content = content;
           gotAnyContent = true;
+        } else {
+          // Show raw response for debugging
+          conv.messages[conv.messages.length - 1].content = 'API 返回了无法解析的内容:\n\n```\n' + buffer.slice(0, 500) + '\n```';
+          gotAnyContent = true;
         }
-      } catch {}
+      } catch {
+        conv.messages[conv.messages.length - 1].content = 'API 返回了非 JSON 内容:\n\n```\n' + buffer.slice(0, 500) + '\n```';
+        gotAnyContent = true;
+      }
     }
 
     if (!gotAnyContent) {
-      conv.messages[conv.messages.length - 1].content = '（API 未返回内容，请检查模型名称和 API 地址）';
+      conv.messages[conv.messages.length - 1].content = 'API 未返回任何内容。当前模型: ' + currentModel + '\n请检查模型名称是否正确。';
     }
     saveData();
   } catch (e) {
@@ -1799,7 +1806,7 @@ async function testConnection() {
   try {
     const resp = await fetch(`${activeApi.url.replace(/\/+$/, '')}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${activeApi.key}` },
+      headers: { 'Content-Type': 'text/plain', 'Authorization': `Bearer ${activeApi.key}` },
       body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 })
     });
     showToast(resp.ok ? '连接成功 ✓' : `连接失败: ${resp.status}`);
