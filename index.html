@@ -375,6 +375,89 @@ body {
   touch-action: manipulation;
 }
 .btn-primary { background: var(--primary); color: white; }
+
+/* API Cards */
+.api-card {
+  padding: 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: border-color 0.15s, background 0.15s;
+}
+.api-card:active { background: rgba(99,102,241,0.04); }
+.api-card.active { border-color: var(--primary); background: rgba(99,102,241,0.06); }
+.api-card-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 4px;
+}
+.api-card-name {
+  font-size: 15px; font-weight: 600;
+  display: flex; align-items: center; gap: 6px;
+}
+.api-card-badge {
+  font-size: 11px; padding: 1px 6px;
+  border-radius: 4px; font-weight: 500;
+  background: var(--primary); color: white;
+}
+.api-card-actions {
+  display: flex; gap: 4px;
+}
+.api-card-btn {
+  width: 28px; height: 28px;
+  border-radius: 6px; border: none;
+  background: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text2); font-size: 14px;
+  touch-action: manipulation;
+}
+.api-card-btn:active { color: var(--text); }
+.api-card-url {
+  font-size: 12px; color: var(--text2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.api-card-balance {
+  font-size: 12px; color: var(--text2);
+  margin-top: 4px;
+  display: flex; align-items: center; gap: 4px;
+}
+.api-card-balance .balance-ok { color: #34c759; }
+.api-card-balance .balance-low { color: #ff9500; }
+.api-card-balance .balance-err { color: #ff3b30; }
+
+/* API Edit Sheet */
+.api-edit-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 350;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s;
+}
+.api-edit-overlay.open { opacity: 1; pointer-events: auto; }
+.api-edit-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  background: var(--card);
+  border-radius: 16px 16px 0 0;
+  z-index: 351;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+  padding: 0 16px 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.api-edit-sheet.open { transform: translateY(0); }
+.api-edit-title {
+  text-align: center; font-size: 17px; font-weight: 600;
+  padding: 12px 0 16px;
+}
+.api-edit-body { }
+.api-edit-actions {
+  display: flex; gap: 8px; margin-top: 8px;
+}
+.api-edit-actions .setting-btn { flex: 1; }
 .btn-danger { background: #ef4444; color: white; }
 .btn-secondary { background: var(--bg); color: var(--text); border: 0.5px solid var(--border); }
 
@@ -593,13 +676,9 @@ body {
   </div>
   <div class="settings-body">
     <div class="setting-group">
-      <div class="setting-label">API 地址</div>
-      <input class="setting-input" id="apiUrl" placeholder="https://your-api.com/v1">
-      <div class="setting-hint">不需要包含 /chat/completions</div>
-    </div>
-    <div class="setting-group">
-      <div class="setting-label">API Key</div>
-      <input class="setting-input" id="apiKey" type="password" placeholder="sk-xxx">
+      <div class="setting-label">API 通道</div>
+      <div id="apiListContainer"></div>
+      <button class="setting-btn btn-secondary" id="addApiBtn" style="margin-top:8px">+ 添加通道</button>
     </div>
     <div class="setting-group">
       <div class="setting-label">模型列表（每行一个）</div>
@@ -610,8 +689,32 @@ body {
       <textarea class="setting-textarea" id="systemPrompt" placeholder="你是一个有帮助的助手。"></textarea>
     </div>
     <div class="setting-group">
-      <button class="setting-btn btn-secondary" id="testBtn">测试连接</button>
       <button class="setting-btn btn-danger" id="clearAllBtn">清空所有对话</button>
+    </div>
+  </div>
+</div>
+
+<!-- API Edit Sheet -->
+<div class="api-edit-overlay" id="apiEditOverlay"></div>
+<div class="api-edit-sheet" id="apiEditSheet">
+  <div class="model-picker-handle"></div>
+  <div class="api-edit-title" id="apiEditTitle">添加通道</div>
+  <div class="api-edit-body">
+    <div class="setting-group">
+      <div class="setting-label">名称</div>
+      <input class="setting-input" id="apiEditName" placeholder="中转站1">
+    </div>
+    <div class="setting-group">
+      <div class="setting-label">API 地址</div>
+      <input class="setting-input" id="apiEditUrl" placeholder="https://your-api.com/v1">
+    </div>
+    <div class="setting-group">
+      <div class="setting-label">API Key</div>
+      <input class="setting-input" id="apiEditKey" type="password" placeholder="sk-xxx">
+    </div>
+    <div class="api-edit-actions">
+      <button class="setting-btn btn-secondary" id="apiEditCancel">取消</button>
+      <button class="setting-btn btn-primary" id="apiEditSave">保存</button>
     </div>
   </div>
 </div>
@@ -630,12 +733,15 @@ body {
 
 <script>
 // ==================== State ====================
-let conversations = []; // [{id, title, messages, created, updated}]
+let conversations = [];
 let currentConvId = null;
 let attachedImages = [];
 let currentModel = '';
 let isStreaming = false;
 let abortController = null;
+let apiConfigs = []; // [{name, url, key}]
+let activeApiIndex = 0;
+let editingApiIndex = -1; // -1 = new
 
 // ==================== Init ====================
 document.addEventListener('DOMContentLoaded', () => {
@@ -660,11 +766,15 @@ function bindEvents() {
   // Settings
   document.getElementById('settingsOverlay').addEventListener('click', closeSettings);
   document.getElementById('settingsCloseBtn').addEventListener('click', closeSettings);
-  document.getElementById('testBtn').addEventListener('click', testConnection);
   document.getElementById('clearAllBtn').addEventListener('click', clearAll);
-  ['apiUrl','apiKey','modelList','systemPrompt'].forEach(id => {
-    document.getElementById(id).addEventListener('input', saveSettings);
-  });
+  document.getElementById('modelList').addEventListener('input', saveSettings);
+  document.getElementById('systemPrompt').addEventListener('input', saveSettings);
+
+  // API edit
+  document.getElementById('addApiBtn').addEventListener('click', () => openApiEdit(-1));
+  document.getElementById('apiEditOverlay').addEventListener('click', closeApiEdit);
+  document.getElementById('apiEditCancel').addEventListener('click', closeApiEdit);
+  document.getElementById('apiEditSave').addEventListener('click', saveApiEdit);
 
   // Model picker
   document.getElementById('modelPicker').addEventListener('click', e => {
@@ -792,12 +902,25 @@ function loadData() {
     } catch {}
   }
   const s = JSON.parse(localStorage.getItem('chat_settings') || '{}');
-  document.getElementById('apiUrl').value = s.apiUrl || '';
-  document.getElementById('apiKey').value = s.apiKey || '';
   document.getElementById('modelList').value = s.modelList || '';
   document.getElementById('systemPrompt').value = s.systemPrompt || '';
   currentModel = s.currentModel || '';
+
+  // Migrate old single API to multi-API
+  if (s.apiUrl && !s.apiConfigs) {
+    apiConfigs = [{ name: '中转站1', url: s.apiUrl, key: s.apiKey || '' }];
+    activeApiIndex = 0;
+  } else {
+    apiConfigs = s.apiConfigs || [];
+    activeApiIndex = s.activeApiIndex || 0;
+  }
+  if (apiConfigs.length === 0) {
+    apiConfigs = [{ name: '中转站1', url: '', key: '' }];
+  }
+  if (activeApiIndex >= apiConfigs.length) activeApiIndex = 0;
+
   updateModelName();
+  renderApiList();
 
   if (conversations.length === 0) {
     createNewChat();
@@ -814,12 +937,16 @@ function saveData() {
 
 function saveSettings() {
   localStorage.setItem('chat_settings', JSON.stringify({
-    apiUrl: document.getElementById('apiUrl').value.trim(),
-    apiKey: document.getElementById('apiKey').value.trim(),
+    apiConfigs,
+    activeApiIndex,
     modelList: document.getElementById('modelList').value.trim(),
     systemPrompt: document.getElementById('systemPrompt').value.trim(),
     currentModel
   }));
+}
+
+function getActiveApi() {
+  return apiConfigs[activeApiIndex] || { url: '', key: '' };
 }
 
 function makeConv() {
@@ -928,12 +1055,170 @@ function formatTime(ts) {
 
 // ==================== Settings ====================
 function openSettings() {
+  renderApiList();
   document.getElementById('settingsOverlay').classList.add('open');
   document.getElementById('settingsPanel').classList.add('open');
 }
 function closeSettings() {
   document.getElementById('settingsOverlay').classList.remove('open');
   document.getElementById('settingsPanel').classList.remove('open');
+}
+
+// ==================== API List ====================
+function renderApiList() {
+  const container = document.getElementById('apiListContainer');
+  container.innerHTML = apiConfigs.map((api, i) => {
+    const isActive = i === activeApiIndex;
+    const shortUrl = api.url ? api.url.replace(/^https?:\/\//, '').slice(0, 30) : '未配置';
+    return `<div class="api-card${isActive ? ' active' : ''}" data-api-index="${i}">
+      <div class="api-card-top">
+        <div class="api-card-name">
+          ${escapeHtml(api.name || '通道' + (i+1))}
+          ${isActive ? '<span class="api-card-badge">当前</span>' : ''}
+        </div>
+        <div class="api-card-actions">
+          <button class="api-card-btn" data-edit-api="${i}" title="编辑">✏️</button>
+          ${apiConfigs.length > 1 ? `<button class="api-card-btn" data-delete-api="${i}" title="删除">🗑</button>` : ''}
+        </div>
+      </div>
+      <div class="api-card-url">${escapeHtml(shortUrl)}</div>
+      <div class="api-card-balance" id="balance-${i}">
+        <span style="color:var(--text2)">余额: --</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Bind events
+  container.querySelectorAll('.api-card').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.closest('[data-edit-api]') || e.target.closest('[data-delete-api]')) return;
+      const idx = parseInt(el.dataset.apiIndex);
+      activeApiIndex = idx;
+      saveSettings();
+      renderApiList();
+    });
+  });
+  container.querySelectorAll('[data-edit-api]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      openApiEdit(parseInt(el.dataset.editApi));
+    });
+  });
+  container.querySelectorAll('[data-delete-api]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      const idx = parseInt(el.dataset.deleteApi);
+      apiConfigs.splice(idx, 1);
+      if (activeApiIndex >= apiConfigs.length) activeApiIndex = Math.max(0, apiConfigs.length - 1);
+      saveSettings();
+      renderApiList();
+    });
+  });
+
+  // Check balances
+  apiConfigs.forEach((api, i) => {
+    if (api.url && api.key) checkBalance(i);
+  });
+}
+
+// ==================== API Edit ====================
+function openApiEdit(index) {
+  editingApiIndex = index;
+  const isEdit = index >= 0;
+  document.getElementById('apiEditTitle').textContent = isEdit ? '编辑通道' : '添加通道';
+  if (isEdit) {
+    const api = apiConfigs[index];
+    document.getElementById('apiEditName').value = api.name || '';
+    document.getElementById('apiEditUrl').value = api.url || '';
+    document.getElementById('apiEditKey').value = api.key || '';
+  } else {
+    document.getElementById('apiEditName').value = '';
+    document.getElementById('apiEditUrl').value = '';
+    document.getElementById('apiEditKey').value = '';
+  }
+  document.getElementById('apiEditOverlay').classList.add('open');
+  document.getElementById('apiEditSheet').classList.add('open');
+}
+function closeApiEdit() {
+  document.getElementById('apiEditOverlay').classList.remove('open');
+  document.getElementById('apiEditSheet').classList.remove('open');
+}
+function saveApiEdit() {
+  const name = document.getElementById('apiEditName').value.trim() || '中转站';
+  const url = document.getElementById('apiEditUrl').value.trim();
+  const key = document.getElementById('apiEditKey').value.trim();
+  if (!url) { showToast('请填写 API 地址'); return; }
+  if (editingApiIndex >= 0) {
+    apiConfigs[editingApiIndex] = { name, url, key };
+  } else {
+    apiConfigs.push({ name, url, key });
+    activeApiIndex = apiConfigs.length - 1;
+  }
+  saveSettings();
+  renderApiList();
+  closeApiEdit();
+  showToast('已保存');
+}
+
+// ==================== Balance Check ====================
+async function checkBalance(index) {
+  const api = apiConfigs[index];
+  if (!api || !api.url || !api.key) return;
+  const el = document.getElementById(`balance-${index}`);
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text2)">余额: 查询中...</span>';
+
+  const baseUrl = api.url.replace(/\/+$/, '');
+
+  // Try OpenAI billing endpoint
+  try {
+    const resp = await fetch(`${baseUrl}/dashboard/billing/credit_grants`, {
+      headers: { 'Authorization': `Bearer ${api.key}` },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      const total = data.total_granted || 0;
+      const used = data.total_used || 0;
+      const remain = (total - used).toFixed(2);
+      const cls = parseFloat(remain) < 10 ? 'balance-low' : 'balance-ok';
+      el.innerHTML = `<span class="${cls}">余额: $${remain}</span>`;
+      return;
+    }
+  } catch {}
+
+  // Try v1/user/balance (common for Chinese relays)
+  try {
+    const resp = await fetch(`${baseUrl}/user/balance`, {
+      headers: { 'Authorization': `Bearer ${api.key}` },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      const balance = data.balance ?? data.available_balance ?? data.total_balance;
+      if (balance !== undefined) {
+        const b = parseFloat(balance);
+        const cls = b < 10 ? 'balance-low' : 'balance-ok';
+        el.innerHTML = `<span class="${cls}">余额: ¥${b.toFixed(2)}</span>`;
+        return;
+      }
+    }
+  } catch {}
+
+  // If all fail, show connection status instead
+  try {
+    const resp = await fetch(`${baseUrl}/models`, {
+      headers: { 'Authorization': `Bearer ${api.key}` },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (resp.ok) {
+      el.innerHTML = '<span style="color:#34c759">状态: 可用</span>';
+    } else {
+      el.innerHTML = `<span class="balance-err">状态: ${resp.status}</span>`;
+    }
+  } catch {
+    el.innerHTML = '<span class="balance-err">状态: 无法连接</span>';
+  }
 }
 
 // ==================== Model Picker ====================
@@ -1072,8 +1357,9 @@ async function handleSend() {
   const text = input.value.trim();
   if (!text && attachedImages.length === 0) return;
 
-  const apiUrl = document.getElementById('apiUrl').value.trim();
-  const apiKey = document.getElementById('apiKey').value.trim();
+  const activeApi = getActiveApi();
+  const apiUrl = activeApi.url;
+  const apiKey = activeApi.key;
   if (!apiUrl || !apiKey) { showToast('请先在设置中填写 API 地址和 Key'); openSettings(); return; }
   if (!currentModel) { showToast('请先选择模型'); openModelPicker(); return; }
 
@@ -1101,31 +1387,70 @@ async function handleSend() {
   updateSendBtn();
   abortController = new AbortController();
 
-  try {
-    const baseUrl = apiUrl.replace(/\/+$/, '');
-    const reqMessages = [];
-    const sysPrompt = document.getElementById('systemPrompt').value.trim();
-    if (sysPrompt) reqMessages.push({ role: 'system', content: sysPrompt });
-    for (const m of conv.messages) {
-      if (m.images && m.images.length > 0) {
-        const content = [];
-        if (m.content) content.push({ type: 'text', text: m.content });
-        for (const img of m.images) content.push({ type: 'image_url', image_url: { url: img } });
-        reqMessages.push({ role: m.role, content });
-      } else {
-        reqMessages.push({ role: m.role, content: m.content });
-      }
+  // Build request messages
+  const reqMessages = [];
+  const sysPrompt = document.getElementById('systemPrompt').value.trim();
+  if (sysPrompt) reqMessages.push({ role: 'system', content: sysPrompt });
+  for (const m of conv.messages) {
+    if (m.images && m.images.length > 0) {
+      const content = [];
+      if (m.content) content.push({ type: 'text', text: m.content });
+      for (const img of m.images) content.push({ type: 'image_url', image_url: { url: img } });
+      reqMessages.push({ role: m.role, content });
+    } else {
+      reqMessages.push({ role: m.role, content: m.content });
     }
+  }
 
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: currentModel, messages: reqMessages, stream: true }),
-      signal: abortController.signal
-    });
+  // Try APIs with failover
+  const triedIndices = new Set();
+  let lastError = null;
+  let resp = null;
+  let usedApiIndex = activeApiIndex;
 
-    if (!resp.ok) { const t = await resp.text(); throw new Error(`API ${resp.status}: ${t}`); }
+  for (let attempt = 0; attempt < apiConfigs.length; attempt++) {
+    let idx = (activeApiIndex + attempt) % apiConfigs.length;
+    if (triedIndices.has(idx)) continue;
+    triedIndices.add(idx);
+    const api = apiConfigs[idx];
+    if (!api.url || !api.key) continue;
 
+    try {
+      resp = await fetch(`${api.url.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.key}` },
+        body: JSON.stringify({ model: currentModel, messages: reqMessages, stream: true }),
+        signal: abortController.signal
+      });
+      if (resp.ok) {
+        usedApiIndex = idx;
+        if (idx !== activeApiIndex) {
+          activeApiIndex = idx;
+          saveSettings();
+          showToast(`已切换到 ${api.name}`);
+        }
+        break;
+      }
+      lastError = new Error(`API ${resp.status}`);
+      resp = null;
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+      lastError = e;
+      resp = null;
+    }
+  }
+
+  if (!resp) {
+    isStreaming = false;
+    updateSendBtn();
+    conv.messages.pop();
+    saveData();
+    renderMessages();
+    showToast(lastError?.message || '所有 API 通道都无法连接');
+    return;
+  }
+
+  try {
     conv.messages.push({ role: 'assistant', content: '' });
     saveData();
     renderMessages();
@@ -1183,14 +1508,13 @@ function updateSendBtn() {
 
 // ==================== Test / Clear ====================
 async function testConnection() {
-  const apiUrl = document.getElementById('apiUrl').value.trim();
-  const apiKey = document.getElementById('apiKey').value.trim();
-  if (!apiUrl || !apiKey) { showToast('请先填写 API 地址和 Key'); return; }
+  const activeApi = getActiveApi();
+  if (!activeApi.url || !activeApi.key) { showToast('请先填写 API 地址和 Key'); return; }
   const model = currentModel || getModels()[0] || 'gpt-3.5-turbo';
   try {
-    const resp = await fetch(`${apiUrl.replace(/\/+$/, '')}/chat/completions`, {
+    const resp = await fetch(`${activeApi.url.replace(/\/+$/, '')}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${activeApi.key}` },
       body: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 5 })
     });
     showToast(resp.ok ? '连接成功 ✓' : `连接失败: ${resp.status}`);
