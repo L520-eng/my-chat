@@ -1671,6 +1671,7 @@ async function handleSend() {
   let resp = null;
   let usedApiIndex = activeApiIndex;
   let debugInfo = '';
+  let lastFetchUrl = '';
 
   for (let attempt = 0; attempt < apiConfigs.length; attempt++) {
     let idx = (activeApiIndex + attempt) % apiConfigs.length;
@@ -1680,6 +1681,7 @@ async function handleSend() {
     if (!api.url || !api.key) continue;
 
     const fetchUrl = `${api.url.replace(/\/+$/, '')}/chat/completions`;
+    lastFetchUrl = fetchUrl;
     const fetchBody = JSON.stringify({ model: currentModel, messages: reqMessages, stream: true });
 
     try {
@@ -1717,7 +1719,7 @@ async function handleSend() {
   if (!resp) {
     isStreaming = false;
     updateSendBtn();
-    conv.messages.push({ role: 'assistant', content: `请求失败：${lastError?.message || '所有 API 通道都无法连接'}\n\n如果显示"跨域被拒绝"，说明此中转站不支持从网页直接调用，需要用 Cherry Studio 等客户端。` });
+    conv.messages.push({ role: 'assistant', content: `请求失败：${lastError?.message || '所有 API 通道都无法连接'}\n\n调试信息：\n- 请求URL: ${lastFetchUrl}\n- 模型: ${currentModel}\n\n如果显示"跨域被拒绝"，说明此中转站不支持从网页直接调用。` });
     saveData();
     renderMessages();
     return;
