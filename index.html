@@ -1408,8 +1408,8 @@ async function fetchModels() {
     renderModelList();
     showToast(`获取到 ${models.length} 个模型`);
   } catch (e) {
-    // Any failure → show common models picker
-    showCommonModelsPicker();
+    // Any failure → show common models in settings
+    showCommonModelsInSettings();
   } finally {
     btn.textContent = '自动获取模型';
     btn.disabled = false;
@@ -1446,57 +1446,34 @@ const COMMON_MODELS = [
   'qwen-max', 'qwen-plus', 'glm-4',
 ];
 
-function showCommonModelsPicker() {
+function showCommonModelsInSettings() {
+  const container = document.getElementById('modelListContainer');
   const existing = new Set(enabledModels);
-  const list = document.getElementById('modelPickerList');
-  list.innerHTML = '<div style="text-align:center;color:var(--text2);padding:8px;font-size:13px">此中转站不支持自动获取，手动选择常用模型</div>' +
+
+  container.innerHTML = '<div class="model-list-empty" style="margin-bottom:8px">此中转站不支持自动获取，点击选择常用模型</div>' +
     COMMON_MODELS.map(m => {
       const checked = existing.has(m);
-      return `<div class="model-item" data-pick-model="${m}" style="${checked ? 'border-color:var(--primary);background:rgba(99,102,241,0.06)' : ''}">
-        <span class="model-item-name">${m}</span>
-        ${checked ? '<span class="model-item-check">✓</span>' : ''}
+      return `<div class="model-check-item${checked ? ' checked' : ''}" data-common-model="${m}">
+        <div class="model-check-box">${checked ? '✓' : ''}</div>
+        <span class="model-check-name">${m}</span>
       </div>`;
-    }).join('') +
-    '<div style="padding:12px 0;text-align:center"><button class="setting-btn btn-secondary" id="commonModelsDone" style="max-width:200px;margin:0 auto">确定</button></div>';
+    }).join('');
 
-  const selected = new Set(enabledModels);
-  list.querySelectorAll('[data-pick-model]').forEach(el => {
+  container.querySelectorAll('[data-common-model]').forEach(el => {
     el.addEventListener('click', () => {
-      const m = el.dataset.pickModel;
-      if (selected.has(m)) {
-        selected.delete(m);
-        el.style.borderColor = '';
-        el.style.background = '';
-        el.querySelector('.model-check-icon')?.remove();
-        const check = el.querySelector('.model-item-check');
-        if (check) check.remove();
-      } else {
-        selected.add(m);
-        el.style.borderColor = 'var(--primary)';
-        el.style.background = 'rgba(99,102,241,0.06)';
-        if (!el.querySelector('.model-item-check')) {
-          const span = document.createElement('span');
-          span.className = 'model-item-check';
-          span.textContent = '✓';
-          el.appendChild(span);
-        }
+      el.classList.toggle('checked');
+      const box = el.querySelector('.model-check-box');
+      box.textContent = el.classList.contains('checked') ? '✓' : '';
+      // Update enabledModels immediately
+      const checked = container.querySelectorAll('.model-check-item.checked');
+      enabledModels = Array.from(checked).map(c => c.dataset.commonModel);
+      if (currentModel && !enabledModels.includes(currentModel)) {
+        currentModel = enabledModels[0] || '';
+        updateModelName();
       }
+      saveSettings();
     });
   });
-
-  document.getElementById('commonModelsDone').addEventListener('click', () => {
-    enabledModels = Array.from(selected);
-    if (currentModel && !enabledModels.includes(currentModel)) {
-      currentModel = enabledModels[0] || '';
-      updateModelName();
-    }
-    saveSettings();
-    renderModelList();
-    closeModelPicker();
-    showToast(`已选择 ${enabledModels.length} 个模型`);
-  });
-
-  document.getElementById('modelPicker').classList.add('open');
 }
 
 // ==================== Model Picker ====================
