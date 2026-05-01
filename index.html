@@ -84,6 +84,7 @@ body {
   -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
+  touch-action: manipulation;
 }
 .topbar-center {
   display: flex;
@@ -524,7 +525,7 @@ body {
 
 <!-- Top Bar -->
 <div class="topbar">
-  <button class="topbar-btn" onclick="newChat()" title="新对话">＋</button>
+  <button class="topbar-btn" id="newChatBtn" title="新对话">＋</button>
   <div class="topbar-center" onclick="openModelPicker()">
     <span class="model-label" id="modelName">设置模型</span>
     <span class="model-dropdown">▾</span>
@@ -617,6 +618,9 @@ window.addEventListener('DOMContentLoaded', () => {
       handleSend();
     }
   });
+
+  // Use addEventListener instead of onclick for iOS compatibility
+  document.getElementById('newChatBtn').addEventListener('click', newChat);
 
   // Fix iOS keyboard blank space
   if (window.visualViewport) {
