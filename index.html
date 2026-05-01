@@ -1715,6 +1715,32 @@ async function handleSend() {
     return;
   }
 
+  // Check if response has a body
+  if (!resp.body) {
+    // No streaming body - try non-streaming fallback
+    try {
+      const text = await resp.text();
+      if (text) {
+        try {
+          const json = JSON.parse(text);
+          const content = json.choices?.[0]?.message?.content;
+          if (content) {
+            conv.messages.push({ role: 'assistant', content });
+            saveData(); renderMessages();
+            return;
+          }
+        } catch {}
+        conv.messages.push({ role: 'assistant', content: `API 返回了非标准响应:\n\n\`\`\`\n${text.slice(0, 500)}\n\`\`\`` });
+      } else {
+        conv.messages.push({ role: 'assistant', content: `API 返回了空响应 (HTTP ${resp.status})。当前模型: ${currentModel}` });
+      }
+    } catch (e) {
+      conv.messages.push({ role: 'assistant', content: `读取响应失败: ${e.message}` });
+    }
+    saveData(); renderMessages();
+    return;
+  }
+
   try {
     conv.messages.push({ role: 'assistant', content: '' });
     saveData();
@@ -1724,6 +1750,7 @@ async function handleSend() {
     const decoder = new TextDecoder();
     let buffer = '';
     let gotAnyContent = false;
+    let rawDebug = '';
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -1773,7 +1800,42 @@ async function handleSend() {
     }
 
     if (!gotAnyContent) {
-      conv.messages[conv.messages.length - 1].content = 'API 未返回任何内容。当前模型: ' + currentModel + '\n请检查模型名称是否正确。';
+      // Streaming returned nothing - try non-streaming as fallback
+      const activeApi = apiConfigs[usedApiIndex];
+      const retryUrl = `${activeApi.url.replace(/\/+$/, '')}/chat/completions`;
+      try {
+        const retryResp = await fetch(retryUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain', 'Authorization': `Bearer ${activeApi.key}` },
+          body: JSON.stringify({ model: currentModel, messages: reqMessages, stream: false }),
+          signal: AbortSignal.timeout(30000)
+        });
+        if (retryResp.ok) {
+          const retryText = await retryResp.text();
+          if (retryText) {
+            try {
+              const json = JSON.parse(retryText);
+              const content = json.choices?.[0]?.message?.content;
+              if (content) {
+                conv.messages[conv.messages.length - 1].content = content;
+                gotAnyContent = true;
+              } else {
+                conv.messages[conv.messages.length - 1].content = '非流式返回但无内容:\n\n```\n' + retryText.slice(0, 500) + '\n```';
+                gotAnyContent = true;
+              }
+            } catch {
+              conv.messages[conv.messages.length - 1].content = '非流式返回非JSON:\n\n```\n' + retryText.slice(0, 500) + '\n```';
+              gotAnyContent = true;
+            }
+          }
+        } else {
+          conv.messages[conv.messages.length - 1].content = `非流式请求失败 HTTP ${retryResp.status}。当前模型: ${currentModel}\n请检查模型名称和 API 地址。`;
+          gotAnyContent = true;
+        }
+      } catch (retryE) {
+        conv.messages[conv.messages.length - 1].content = `流式和非流式均无返回。\n流式: 空响应体\n非流式: ${retryE.message}\n当前模型: ${currentModel}\n请检查 API 地址和模型名称。`;
+        gotAnyContent = true;
+      }
     }
     saveData();
   } catch (e) {
