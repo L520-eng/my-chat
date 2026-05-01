@@ -981,6 +981,14 @@ function loadData() {
   }
   if (activeApiIndex >= apiConfigs.length) activeApiIndex = 0;
 
+  // Default model
+  if (enabledModels.length === 0) {
+    enabledModels = ['claude-opus-4-6'];
+  }
+  if (!currentModel || !enabledModels.includes(currentModel)) {
+    currentModel = enabledModels[0];
+  }
+
   updateModelName();
   renderApiList();
 
