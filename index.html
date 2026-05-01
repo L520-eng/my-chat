@@ -1673,6 +1673,7 @@ async function handleSend() {
   let debugInfo = '';
   let lastFetchUrl = '';
 
+  // Non-streaming request (simpler and more reliable)
   for (let attempt = 0; attempt < apiConfigs.length; attempt++) {
     let idx = (activeApiIndex + attempt) % apiConfigs.length;
     if (triedIndices.has(idx)) continue;
@@ -1682,7 +1683,7 @@ async function handleSend() {
 
     const fetchUrl = `${api.url.replace(/\/+$/, '')}/chat/completions`;
     lastFetchUrl = fetchUrl;
-    const fetchBody = JSON.stringify({ model: currentModel, messages: reqMessages, stream: true });
+    const fetchBody = JSON.stringify({ model: currentModel, messages: reqMessages, stream: false });
 
     try {
       resp = await fetch(fetchUrl, {
@@ -1701,17 +1702,12 @@ async function handleSend() {
         break;
       }
       const errBody = await resp.text().catch(() => '');
-      debugInfo = `HTTP ${resp.status}: ${errBody.slice(0,200)}`;
+      debugInfo = `HTTP ${resp.status}: ${errBody.slice(0, 300)}`;
       lastError = new Error(debugInfo);
       resp = null;
     } catch (e) {
       if (e.name === 'AbortError') throw e;
-      debugInfo = e.message;
-      // Check if it's a CORS error
-      if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.message.includes('CORS')) {
-        debugInfo = `跨域被拒绝: ${api.url}`;
-      }
-      lastError = new Error(debugInfo);
+      lastError = new Error(e.message);
       resp = null;
     }
   }
@@ -1719,133 +1715,24 @@ async function handleSend() {
   if (!resp) {
     isStreaming = false;
     updateSendBtn();
-    conv.messages.push({ role: 'assistant', content: `请求失败：${lastError?.message || '所有 API 通道都无法连接'}\n\n调试信息：\n- 请求URL: ${lastFetchUrl}\n- 模型: ${currentModel}\n\n如果显示"跨域被拒绝"，说明此中转站不支持从网页直接调用。` });
+    conv.messages.push({ role: 'assistant', content: `请求失败：${lastError?.message || '所有 API 通道都无法连接'}\n\n调试：URL=${lastFetchUrl} 模型=${currentModel}` });
     saveData();
     renderMessages();
-    return;
-  }
-
-  // Check if response has a body
-  if (!resp.body) {
-    // No streaming body - try non-streaming fallback
-    try {
-      const text = await resp.text();
-      if (text) {
-        try {
-          const json = JSON.parse(text);
-          const content = json.choices?.[0]?.message?.content;
-          if (content) {
-            conv.messages.push({ role: 'assistant', content });
-            saveData(); renderMessages();
-            return;
-          }
-        } catch {}
-        conv.messages.push({ role: 'assistant', content: `API 返回了非标准响应:\n\n\`\`\`\n${text.slice(0, 500)}\n\`\`\`` });
-      } else {
-        conv.messages.push({ role: 'assistant', content: `API 返回了空响应 (HTTP ${resp.status})。当前模型: ${currentModel}` });
-      }
-    } catch (e) {
-      conv.messages.push({ role: 'assistant', content: `读取响应失败: ${e.message}` });
-    }
-    saveData(); renderMessages();
     return;
   }
 
   try {
-    conv.messages.push({ role: 'assistant', content: '' });
-    saveData();
-    renderMessages();
+    const text = await resp.text();
+    let content = '';
+    try {
+      const json = JSON.parse(text);
+      content = json.choices?.[0]?.message?.content || '';
+    } catch {}
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let gotAnyContent = false;
-    let rawDebug = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        if (trimmed.startsWith('data: ')) {
-          const data = trimmed.slice(6);
-          if (data === '[DONE]') continue;
-          try {
-            const delta = JSON.parse(data).choices?.[0]?.delta?.content;
-            if (delta) {
-              gotAnyContent = true;
-              conv.messages[conv.messages.length - 1].content += delta;
-              const area = document.getElementById('chatArea');
-              const msgEl = area.querySelector('.msg.assistant:last-child');
-              if (msgEl) {
-                msgEl.querySelector('.msg-bubble').innerHTML = formatText(conv.messages[conv.messages.length - 1].content);
-              }
-              scrollToBottom();
-            }
-          } catch {}
-        }
-      }
-    }
-
-    // If no streaming content, try reading full response
-    if (!gotAnyContent && buffer) {
-      try {
-        const json = JSON.parse(buffer);
-        const content = json.choices?.[0]?.message?.content;
-        if (content) {
-          conv.messages[conv.messages.length - 1].content = content;
-          gotAnyContent = true;
-        } else {
-          // Show raw response for debugging
-          conv.messages[conv.messages.length - 1].content = 'API 返回了无法解析的内容:\n\n```\n' + buffer.slice(0, 500) + '\n```';
-          gotAnyContent = true;
-        }
-      } catch {
-        conv.messages[conv.messages.length - 1].content = 'API 返回了非 JSON 内容:\n\n```\n' + buffer.slice(0, 500) + '\n```';
-        gotAnyContent = true;
-      }
-    }
-
-    if (!gotAnyContent) {
-      // Streaming returned nothing - try non-streaming as fallback
-      const activeApi = apiConfigs[usedApiIndex];
-      const retryUrl = `${activeApi.url.replace(/\/+$/, '')}/chat/completions`;
-      try {
-        const retryResp = await fetch(retryUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain', 'Authorization': `Bearer ${activeApi.key}` },
-          body: JSON.stringify({ model: currentModel, messages: reqMessages, stream: false }),
-          signal: AbortSignal.timeout(30000)
-        });
-        if (retryResp.ok) {
-          const retryText = await retryResp.text();
-          if (retryText) {
-            try {
-              const json = JSON.parse(retryText);
-              const content = json.choices?.[0]?.message?.content;
-              if (content) {
-                conv.messages[conv.messages.length - 1].content = content;
-                gotAnyContent = true;
-              } else {
-                conv.messages[conv.messages.length - 1].content = '非流式返回但无内容:\n\n```\n' + retryText.slice(0, 500) + '\n```';
-                gotAnyContent = true;
-              }
-            } catch {
-              conv.messages[conv.messages.length - 1].content = '非流式返回非JSON:\n\n```\n' + retryText.slice(0, 500) + '\n```';
-              gotAnyContent = true;
-            }
-          }
-        } else {
-          conv.messages[conv.messages.length - 1].content = `非流式请求失败 HTTP ${retryResp.status}。当前模型: ${currentModel}\n请检查模型名称和 API 地址。`;
-          gotAnyContent = true;
-        }
-      } catch (retryE) {
-        conv.messages[conv.messages.length - 1].content = `流式和非流式均无返回。\n流式: 空响应体\n非流式: ${retryE.message}\n当前模型: ${currentModel}\n请检查 API 地址和模型名称。`;
-        gotAnyContent = true;
-      }
+    if (content) {
+      conv.messages.push({ role: 'assistant', content });
+    } else {
+      conv.messages.push({ role: 'assistant', content: `API 返回异常 (HTTP ${resp.status}):\n\n\`\`\`\n${text.slice(0, 500)}\n\`\`\`\n\n模型: ${currentModel}\nURL: ${lastFetchUrl}` });
     }
     saveData();
   } catch (e) {
@@ -1853,7 +1740,7 @@ async function handleSend() {
       if (conv.messages.length > 0 && conv.messages[conv.messages.length - 1].role === 'assistant' && !conv.messages[conv.messages.length - 1].content) {
         conv.messages.pop();
       }
-      showToast(e.message || '请求失败');
+      conv.messages.push({ role: 'assistant', content: `请求异常: ${e.message}` });
     }
     saveData();
   } finally {
