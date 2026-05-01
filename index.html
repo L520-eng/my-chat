@@ -1355,34 +1355,54 @@ async function fetchModels() {
 
   try {
     const baseUrl = api.url.replace(/\/+$/, '');
-    const resp = await fetch(`${baseUrl}/models`, {
-      headers: { 'Authorization': `Bearer ${api.key}` },
-      signal: AbortSignal.timeout(10000)
-    });
-    const text = await resp.text();
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${text.slice(0,100)}`);
+    let resp;
+    let text;
+
+    // Try fetch with CORS mode first
+    try {
+      resp = await fetch(`${baseUrl}/models`, {
+        headers: { 'Authorization': `Bearer ${api.key}` },
+        signal: AbortSignal.timeout(10000)
+      });
+      text = await resp.text();
+    } catch (fetchErr) {
+      // If fetch fails (likely CORS), try via a proxy approach
+      // Use XHR which has slightly different CORS behavior
+      text = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', `${baseUrl}/models`, true);
+        xhr.setRequestHeader('Authorization', `Bearer ${api.key}`);
+        xhr.timeout = 10000;
+        xhr.onload = () => resolve(xhr.responseText);
+        xhr.onerror = () => reject(new Error('网络请求失败，可能是 CORS 限制。请检查 API 地址是否正确'));
+        xhr.ontimeout = () => reject(new Error('请求超时'));
+        xhr.send();
+      });
+    }
+
+    if (text && text.startsWith('<')) {
+      throw new Error('返回了网页而非 API 数据，请检查 API 地址');
+    }
 
     let data;
-    try { data = JSON.parse(text); } catch { throw new Error('返回内容不是 JSON: ' + text.slice(0,100)); }
+    try { data = JSON.parse(text); } catch { throw new Error('返回非 JSON: ' + text.slice(0,100)); }
 
-    // Try different response formats
     let models = [];
-    // Format 1: { data: [{ id: "xxx" }, ...] }
     if (data.data && Array.isArray(data.data)) {
       models = data.data.map(m => typeof m === 'string' ? m : m.id).filter(Boolean);
     }
-    // Format 2: { models: ["xxx", ...] }
     if (models.length === 0 && data.models && Array.isArray(data.models)) {
       models = data.models.map(m => typeof m === 'string' ? m : m.id).filter(Boolean);
     }
-    // Format 3: direct array ["xxx", ...]
     if (models.length === 0 && Array.isArray(data)) {
       models = data.map(m => typeof m === 'string' ? m : m.id).filter(Boolean);
     }
 
-    if (models.length === 0) throw new Error('未识别到模型，返回: ' + text.slice(0,150));
+    if (models.length === 0) {
+      // Show raw response for debugging
+      throw new Error('未识别到模型。接口返回: ' + text.slice(0, 200));
+    }
 
-    // Sort: put common models first
     const priority = ['claude', 'gpt-4', 'gpt-3', 'gemini', 'deepseek'];
     models.sort((a, b) => {
       const ai = priority.findIndex(p => a.toLowerCase().includes(p));
