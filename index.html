@@ -1662,6 +1662,7 @@ async function handleSend() {
   let lastError = null;
   let resp = null;
   let usedApiIndex = activeApiIndex;
+  let debugInfo = '';
 
   for (let attempt = 0; attempt < apiConfigs.length; attempt++) {
     let idx = (activeApiIndex + attempt) % apiConfigs.length;
@@ -1670,11 +1671,14 @@ async function handleSend() {
     const api = apiConfigs[idx];
     if (!api.url || !api.key) continue;
 
+    const fetchUrl = `${api.url.replace(/\/+$/, '')}/chat/completions`;
+    const fetchBody = JSON.stringify({ model: currentModel, messages: reqMessages, stream: true });
+
     try {
-      resp = await fetch(`${api.url.replace(/\/+$/, '')}/chat/completions`, {
+      resp = await fetch(fetchUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.key}` },
-        body: JSON.stringify({ model: currentModel, messages: reqMessages, stream: true }),
+        body: fetchBody,
         signal: abortController.signal
       });
       if (resp.ok) {
@@ -1686,11 +1690,18 @@ async function handleSend() {
         }
         break;
       }
-      lastError = new Error(`API ${resp.status}`);
+      const errBody = await resp.text().catch(() => '');
+      debugInfo = `HTTP ${resp.status}: ${errBody.slice(0,200)}`;
+      lastError = new Error(debugInfo);
       resp = null;
     } catch (e) {
       if (e.name === 'AbortError') throw e;
-      lastError = e;
+      debugInfo = e.message;
+      // Check if it's a CORS error
+      if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.message.includes('CORS')) {
+        debugInfo = `跨域被拒绝: ${api.url}`;
+      }
+      lastError = new Error(debugInfo);
       resp = null;
     }
   }
@@ -1698,10 +1709,9 @@ async function handleSend() {
   if (!resp) {
     isStreaming = false;
     updateSendBtn();
-    conv.messages.pop();
+    conv.messages.push({ role: 'assistant', content: `请求失败：${lastError?.message || '所有 API 通道都无法连接'}\n\n如果显示"跨域被拒绝"，说明此中转站不支持从网页直接调用，需要用 Cherry Studio 等客户端。` });
     saveData();
     renderMessages();
-    showToast(lastError?.message || '所有 API 通道都无法连接');
     return;
   }
 
