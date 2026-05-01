@@ -579,6 +579,21 @@ function bindEvents() {
   input.addEventListener('focus', () => setTimeout(() => scrollToBottom(), 300));
   input.addEventListener('blur', () => window.scrollTo(0, 0));
 
+  // Paste image support
+  document.addEventListener('paste', e => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        const reader = new FileReader();
+        reader.onload = ev => { attachedImages.push(ev.target.result); renderImagePreviews(); };
+        reader.readAsDataURL(blob);
+      }
+    }
+  });
+
   // Send / Stop
   document.getElementById('sendBtn').addEventListener('click', handleSend);
 
