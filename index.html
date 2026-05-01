@@ -1359,10 +1359,28 @@ async function fetchModels() {
       headers: { 'Authorization': `Bearer ${api.key}` },
       signal: AbortSignal.timeout(10000)
     });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    const models = (data.data || []).map(m => m.id).filter(Boolean);
-    if (models.length === 0) throw new Error('未获取到模型');
+    const text = await resp.text();
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${text.slice(0,100)}`);
+
+    let data;
+    try { data = JSON.parse(text); } catch { throw new Error('返回内容不是 JSON: ' + text.slice(0,100)); }
+
+    // Try different response formats
+    let models = [];
+    // Format 1: { data: [{ id: "xxx" }, ...] }
+    if (data.data && Array.isArray(data.data)) {
+      models = data.data.map(m => typeof m === 'string' ? m : m.id).filter(Boolean);
+    }
+    // Format 2: { models: ["xxx", ...] }
+    if (models.length === 0 && data.models && Array.isArray(data.models)) {
+      models = data.models.map(m => typeof m === 'string' ? m : m.id).filter(Boolean);
+    }
+    // Format 3: direct array ["xxx", ...]
+    if (models.length === 0 && Array.isArray(data)) {
+      models = data.map(m => typeof m === 'string' ? m : m.id).filter(Boolean);
+    }
+
+    if (models.length === 0) throw new Error('未识别到模型，返回: ' + text.slice(0,150));
 
     // Sort: put common models first
     const priority = ['claude', 'gpt-4', 'gpt-3', 'gemini', 'deepseek'];
@@ -1374,7 +1392,6 @@ async function fetchModels() {
     });
 
     enabledModels = models;
-    // Auto-select first model if none selected
     if (!currentModel && models.length > 0) {
       currentModel = models[0];
       updateModelName();
